@@ -25,8 +25,7 @@ from airflow.models import Variable
 # 2. 설정 정보 -> OpenSearch
 conn = BaseHook.get_connection('opensearch_default')
 host = Variable.get("OS_HOST")#, deserialize_json=True) # 뒤옵션을 풀면 JSON 형태로 출력됨(역직렬화)
-logging.info( host )
-logging.info( conn.host )
+
 # 도메인 엔드 포인트(IPV4)
 HOST        = conn.host
 AUTH        = (conn.login, conn.password) # master 계정 정보 (숨김), .env나 airflow에 설정값등
@@ -36,6 +35,12 @@ INDEX_NAME  = 'a-factory-45x-sensor-v1' # 해당 데이터를 검색할 수 있�
 
 # 파이썬 레벨(airflow 없이 사용할 수 있다)
 def _send_log_task(**kwargs):
+    logging.info( '-'*20 )
+    logging.info( host )
+    logging.info( '-'*20 )
+    logging.info( conn.host )
+    logging.info( '-'*20 )
+    
     # 1. 오픈서치 모듈 가져오기 -> 에러 발생시 확실한 위치 확인차원
     # 로컬(가상환경)에서 직접 접근시
     from opensearchpy import OpenSearch
@@ -59,9 +64,43 @@ def _send_log_task(**kwargs):
         
     logging.info('가상 센서 데이터 전송 (Batch 작업:특정 반복 주기로 진행, 실시간 x, 지연 존재)')
     
-    
     # 4. 장비 고유값 정의( n개의 센서의 고유값 정의(문자열) )
+    oven_ids = ['OVEN_001','OVEN_002','OVEN_003']
+    
     # 5. 로그 발생
+    # 장비별로 30회 로그를 임의 발생 -> 전송 (회차별 장비 3개의 로그값 전송)
+    MAX_LOOP = 30
+    for i in range(MAX_LOOP):
+        for oven in oven_ids:
+            # 데이터 랜덤 생성
+            temp = random.uniform(100, 200) # 오븐 온도 생성
+            # 임의 변조
+            if random.random() > 0.95: #5% 확률로 변조
+                temp += random.uniform(30, 50)
+            # 데이터 구성
+            doc = {
+                'timestamp' :  datetime.now(), # 로그 발생 시간
+                'oven_id'   : oven,            # 센서 장비 id
+                'temperature' : round(temp,2), # 온도(소수점 2자리까지)
+                'vibration' : round( random.uniform(0, 1.5), 2 ),  # 진동 레벨 임의 구성
+                'status'    : 'DANGER' if temp > 230 else 'NORMAL' # 센서 감지상 위험/평시
+            }
+            # 시나리오
+            # 특정 기간동안 특정센서에서 DANGER 가 지속적으로 검색되면 => 이상신호로 볼 수 있음
+            # 전송
+            client.index(
+                index = INDEX_NAME,
+                body  = doc,
+                refresh = True
+            )
+        # 전송률 로깅 -> 특정 텀 단위로 진행 -> 5번에 한번식 로깅
+        if i % 5:
+            logging.info(f'{i+1}번차 로그 전송 성공')
+        
+        # 시간 임의 지연 -> 2초
+        time.sleep(2)
+        
+    
     # 6. 로그 전송
     # 7. 배치 작업 완료
     logging.info('n차 로그 발생 완료')
@@ -75,7 +114,7 @@ with DAG(
         'retries'        : 1,
         'retry_delay'    : timedelta(minutes=1)
     },
-    schedule_interval   = '*/1 * * * *', # 5분간격
+    schedule_interval   = '*/2 * * * *', # 5분간격
     start_date          = datetime(2026,1,1),
     catchup             = False,
     tags                = ['elk','opensearch', 'sensor', '스마트팩토리']
