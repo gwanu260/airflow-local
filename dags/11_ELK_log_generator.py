@@ -17,6 +17,7 @@ from airflow.operators.python import PythonOperator
 import logging
 import random
 import time
+import pendulum
 # Generic 타입의 커넥션 정보 획득
 from airflow.hooks.base import BaseHook
 # 환경변수에서 획득
@@ -79,7 +80,7 @@ def _send_log_task(**kwargs):
                 temp += random.uniform(30, 50)
             # 데이터 구성
             doc = {
-                'timestamp' :  datetime.now(), # 로그 발생 시간
+                'timestamp' :  pendulum.now(tz="Asia/Seoul"), # 로그 발생 시간
                 'oven_id'   : oven,            # 센서 장비 id
                 'temperature' : round(temp,2), # 온도(소수점 2자리까지)
                 'vibration' : round( random.uniform(0, 1.5), 2 ),  # 진동 레벨 임의 구성
